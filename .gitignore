@@ -1,42 +1,23 @@
 # Python
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-*.so
+
+# SQLite
+*.sqlite3
 
 # Virtual environment
 venv/
-env/
-ENV/
-.venv/
 
-# Django stuff
-*.log
-*.pot
-*.pyc
-db.sqlite3
-media/
+# Django static files
 staticfiles/
-local_settings.py
 
-# PostgreSQL (optional, if you dump DB)
-*.pgsql
-*.sql
-
-# Environment variables
-.env
-.env.*
-
-# VSCode
+# Editor files
 .vscode/
-
-# PyCharm
 .idea/
 
-# OS-generated files
+# OS-specific
 .DS_Store
 Thumbs.db
 
-# Postman files
-*.postman_collection.json
+# Environment Variables
+.env
