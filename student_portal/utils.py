@@ -4,7 +4,7 @@ from datetime import datetime
 
 from rest_framework.response import Response
 from rest_framework import status
-from student_portal.models import ErrorLogs
+from session_management.models import ErrorLogs
 
 
 def log_exception(

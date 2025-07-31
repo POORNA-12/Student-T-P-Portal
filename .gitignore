@@ -1,23 +1,79 @@
-# Python
+# Python bytecode files
+*.pyc
+*.pyo
+*.pyd
 __pycache__/
-*.py[cod]
+*.pyd
+*.db
 
-# SQLite
-*.sqlite3
-
-# Virtual environment
-venv/
+# Django migrations
+*/migrations/*
 
 # Django static files
-staticfiles/
+/static/
 
-# Editor files
+/media/
+
+# Environment variables
+.env
+.env.*
+
+# IDE and editor files
 .vscode/
 .idea/
+*.sublime-workspace
+*.sublime-project
 
-# OS-specific
+# Python virtual environments
+venv/
+env/
+myenv/
+.venv/
+.virtualenv/
+
+# MacOS
 .DS_Store
-Thumbs.db
 
-# Environment Variables
-.env
+# Windows
+Thumbs.db
+ehthumbs.db
+
+# Logs and database
+*.log
+*.sqlite3
+
+# Pytest
+*.coveragerc
+coverage.xml
+nosetests.xml
+test_*.xml
+*.hypothesis/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+
+# pytest cache
+.cache/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+*.deb
+*.out
+
+*.css
+*.svg
+*.js
+
+*.woff
+*.woff2
+
+*.md
+
+*.map
+*.ico
+*.txt
+*.eot
+*.png
+*.ttf
