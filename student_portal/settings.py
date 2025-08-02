@@ -24,6 +24,10 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework',
+    'rest_framework_simplejwt.token_blacklist',
+    'rest_framework.authtoken',
+    'corsheaders',
     'session_management'
 ]
 
@@ -117,6 +121,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,
+    'ROTATE_REFRESH_TOKENS': True,
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=10),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 }
