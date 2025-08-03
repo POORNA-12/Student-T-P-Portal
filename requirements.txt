@@ -12,3 +12,8 @@ djangorestframework-simplejwt
 twilio
 pandas
 openpyxl
+
+
+
+
+# python manage.py import_students "Data.xlsx"

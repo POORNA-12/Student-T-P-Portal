@@ -12,7 +12,12 @@ class SetPasswordSerializer(serializers.Serializer):
     register_number = serializers.CharField()
     password = serializers.CharField()
 
+class LoginSerializer(serializers.Serializer):
+    register_number = serializers.CharField()
+    password = serializers.CharField()
+
 class StudentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Student
         fields = '__all__'
+
