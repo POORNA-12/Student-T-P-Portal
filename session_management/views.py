@@ -101,6 +101,7 @@ class SetPasswordView(APIView):
     def post(self, request):
         serializer = SetPasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+
         reg_no = serializer.validated_data['register_number'].upper()
         password = serializer.validated_data['password']
 
@@ -110,15 +111,18 @@ class SetPasswordView(APIView):
             student.save()
 
             refresh = RefreshToken.for_user(student)
+
             return Response({
                 "access": str(refresh.access_token),
                 "refresh": str(refresh),
                 "name": student.name
-            }, status=200)
+            }, status=status.HTTP_200_OK)
+
+        except Student.DoesNotExist:
+            return Response({"error": "Student not found"}, status=status.HTTP_404_NOT_FOUND)
+
         except Exception as e:
             return log_exception(e)
-        except:
-            return Response({"error": "Failed to set password"}, status=400)
 
 
 class LoginView(APIView):
@@ -134,20 +138,22 @@ class LoginView(APIView):
 
             if check_password(password, student.password):
                 refresh = RefreshToken.for_user(student)
+
                 return Response({
                     "access": str(refresh.access_token),
                     "refresh": str(refresh),
                     "name": student.name,
                     "phone_number": student.phone_number,
                     "email": student.email
-                }, status=200)
-            else:
-                return Response({"error": "Incorrect password"}, status=401)
+                }, status=status.HTTP_200_OK)
+
+            return Response({"error": "Incorrect password"}, status=status.HTTP_401_UNAUTHORIZED)
 
         except Student.DoesNotExist:
-            return Response({"error": "Register number not found"}, status=404)
+            return Response({"error": "Register number not found"}, status=status.HTTP_404_NOT_FOUND)
+
         except Exception as e:
-            return Response({"error": str(e)}, status=500)
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
 
         
