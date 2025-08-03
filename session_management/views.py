@@ -14,44 +14,17 @@ from student_portal.utils import *
 import firebase_admin
 from firebase_admin import auth as firebase_auth
 from student_portal.utils import *
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+import json
+from django.utils.dateparse import parse_date
 
 
 account_sid = config('TWILIO_ACCOUNT_SID')
 auth_token = config('TWILIO_AUTH_TOKEN')
 twilio_phone = config('TWILIO_PHONE')
 twilio_client = Client(account_sid, auth_token)
-
-# class RegisterCheckView(APIView):
-#     def post(self, request):
-#         serializer = RegisterNumberSerializer(data=request.data)
-#         serializer.is_valid(raise_exception=True)
-#         reg_no = serializer.validated_data['register_number'].upper()
-#         id_token = request.data.get('idToken')
-
-#         if not id_token:
-#             return Response({"error": "Firebase ID token missing."}, status=400)
-
-#         try:
-#             decoded_token = firebase_auth.verify_id_token(id_token)
-#             phone_number = decoded_token.get('phone_number')
-
-#             student = Student.objects.get(register_number=reg_no)
-
-#             if student.phone_number != phone_number:
-#                 return Response({"error": "Phone number does not match."}, status=403)
-
-#             # OTP already verified on frontend, you can log or save verified status
-#             return Response({
-#                 "message": "OTP verified successfully",
-#                 "phone_number": phone_number
-#             }, status=200)
-
-#         except firebase_auth.InvalidIdTokenError:
-#             return Response({"error": "Invalid ID token."}, status=401)
-#         except Student.DoesNotExist:
-#             return Response({"error": "Register number not found"}, status=404)
-#         except Exception as e:
-#             return Response({"error": str(e)}, status=500)
 
 class RegisterCheckView(APIView):
     def post(self, request):
@@ -175,3 +148,81 @@ class LoginView(APIView):
             return Response({"error": "Register number not found"}, status=404)
         except Exception as e:
             return Response({"error": str(e)}, status=500)
+        
+
+        
+@method_decorator(csrf_exempt, name='dispatch')
+class StudentView(APIView):
+    def get(self, request):
+        reg_no = request.GET.get('register_number', '').upper()
+
+        try:
+            student = Student.objects.get(register_number=reg_no)
+            data = {
+                "register_number": student.register_number,
+                "name": student.name,
+                "phone_number": student.phone_number,
+                "dob": student.dob.isoformat() if student.dob else None,
+                "gender": student.gender,
+                "father_name": student.father_name,
+                "mother_name": student.mother_name,
+                "email": student.email,
+                "aadhar_number": student.aadhar_number,
+                "updated_at": student.updated_at.isoformat() if student.updated_at else None
+            }
+            return JsonResponse(data, status=200)
+        except Student.DoesNotExist:
+            return JsonResponse({"error": "Student not found"}, status=404)
+
+    def post(self, request):
+        try:
+            data = json.loads(request.body)
+            reg_no = data.get("register_number", "").upper()
+            otp = data.get("otp", "").strip()
+
+            student = Student.objects.get(register_number=reg_no)
+
+            # Normalize phone number
+            phone_number = student.phone_number.strip().replace(' ', '')
+            if not phone_number.startswith('+91'):
+                phone_number = '+91' + phone_number.lstrip('0')
+
+            if not otp:
+                # Send OTP
+                generated_otp = str(random.randint(100000, 999999))
+                OTP.objects.create(student=student, otp=generated_otp)
+
+                twilio_client.messages.create(
+                    body=f"Your OTP is {generated_otp}",
+                    from_=twilio_phone,
+                    to=phone_number
+                )
+
+                return JsonResponse({"message": "OTP sent to registered mobile number"}, status=200)
+
+            # ✅ OTP Validation
+            valid_otp = OTP.objects.filter(
+                student=student,
+                otp=otp,
+                created_at__gte=timezone.now() - timedelta(minutes=5)
+            ).order_by("-created_at").first()
+
+            if not valid_otp:
+                return JsonResponse({"error": "Invalid or expired OTP"}, status=400)
+
+            # ✅ Update fields
+            update_fields = ['dob', 'gender', 'father_name', 'mother_name', 'email', 'aadhar_number']
+            for field in update_fields:
+                value = data.get(field)
+                if value:
+                    setattr(student, field, parse_date(value) if field == 'dob' else value)
+
+            student.save()
+            return JsonResponse({"message": "Student data updated successfully"}, status=200)
+
+        except Student.DoesNotExist:
+            return JsonResponse({"error": "Student not found"}, status=404)
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid JSON"}, status=400)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
