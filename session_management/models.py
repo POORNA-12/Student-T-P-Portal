@@ -1,7 +1,6 @@
 from django.db import models
-from datetime import timedelta, datetime
-from django.utils.timezone import now, make_aware, timezone
 from django.contrib.auth.models import BaseUserManager, AbstractBaseUser, PermissionsMixin
+from django.utils.timezone import now
 
 class ErrorLogs(models.Model):
     error = models.JSONField()
@@ -26,7 +25,7 @@ class StudentUserManager(BaseUserManager):
         return self.create_user(register_number, password, **extra_fields)
 
 class Student(AbstractBaseUser, PermissionsMixin):
-    register_number = models.CharField(max_length=20, unique=True, primary_key=True)  # ✅ Primary key
+    register_number = models.CharField(max_length=20, unique=True, primary_key=True)
     name = models.CharField(max_length=100)
     phone_number = models.CharField(max_length=15)
     dob = models.DateField(null=True, blank=True)
@@ -35,9 +34,10 @@ class Student(AbstractBaseUser, PermissionsMixin):
     mother_name = models.CharField(max_length=100, null=True, blank=True)
     email = models.EmailField(null=True, blank=True)
     aadhar_number = models.CharField(max_length=12, null=True, blank=True)
-
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+    is_superuser = models.BooleanField(default=False)  # Explicitly defined
+    last_login = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     USERNAME_FIELD = 'register_number'
@@ -47,7 +47,6 @@ class Student(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return f"{self.name} ({self.register_number})"
-
 
 class OTP(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE)

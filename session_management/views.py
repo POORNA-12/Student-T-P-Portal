@@ -8,7 +8,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework.permissions import IsAuthenticated
 from .models import Student, OTP
-from .serializers import RegisterNumberSerializer, OTPVerifySerializer, SetPasswordSerializer, LoginSerializer, ForgotPasswordSerializer
+from .serializers import RegisterNumberSerializer, OTPVerifySerializer, SetPasswordSerializer, LoginSerializer, ForgotPasswordSerializer, UpdateStudentSerializer
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
 from django.contrib.auth.hashers import make_password, check_password
@@ -17,7 +17,6 @@ from student_portal.utils import *
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
-import json
 from django.utils.dateparse import parse_date
 
 account_sid = config('TWILIO_ACCOUNT_SID')
@@ -105,51 +104,44 @@ class SetPasswordView(APIView):
     def post(self, request):
         serializer = SetPasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
         reg_no = serializer.validated_data['register_number'].upper()
         password = serializer.validated_data['password']
 
         try:
             student = Student.objects.get(register_number=reg_no)
-
-            # ✅ Set and save hashed password
             student.password = make_password(password)
             student.save()
 
-            # ✅ Generate JWT tokens
             refresh = RefreshToken.for_user(student)
+            refresh['register_number'] = student.register_number
+            refresh['name'] = student.name
             access = refresh.access_token
 
             return Response({
                 "access": str(access),
                 "refresh": str(refresh),
                 "name": student.name,
-                "register_number": student.register_number,
-            }, status=status.HTTP_200_OK)
-
+                "register_number": student.register_number
+            }, status=200)
         except Student.DoesNotExist:
-            return Response(
-                {"error": "Student not found."},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return Response({"error": "Student not found"}, status=404)
         except Exception as e:
             log_exception(e)
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": str(e)}, status=500)
 
 class LoginView(APIView):
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
         reg_no = serializer.validated_data['register_number'].upper()
         password = serializer.validated_data['password']
 
         try:
             student = Student.objects.get(register_number=reg_no)
-
             if check_password(password, student.password):
-                # ✅ Correct way to generate refresh and access tokens
                 refresh = RefreshToken.for_user(student)
+                refresh['register_number'] = student.register_number
+                refresh['name'] = student.name
                 access = refresh.access_token
 
                 return Response({
@@ -159,66 +151,41 @@ class LoginView(APIView):
                     "register_number": student.register_number,
                     "phone_number": student.phone_number,
                     "email": student.email or ""
-                }, status=status.HTTP_200_OK)
+                }, status=200)
             else:
-                return Response(
-                    {"error": "Incorrect password"},
-                    status=status.HTTP_401_UNAUTHORIZED
-                )
-
+                return Response({"error": "Incorrect password"}, status=401)
         except Student.DoesNotExist:
-            return Response(
-                {"error": "Register number not found"},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return Response({"error": "Register number not found"}, status=404)
         except Exception as e:
             log_exception(e)
-            return Response(
-                {"error": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return Response({"error": str(e)}, status=500)
 
 class RefreshTokenView(APIView):
     def post(self, request, *args, **kwargs):
         refresh_token = request.data.get("refresh")
-
         if not refresh_token:
-            return Response(
-                {"message": "Refresh token is required!"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
+            return Response({"message": "Refresh token is required!"}, status=400)
         try:
             refresh = RefreshToken(refresh_token)
             access_token = str(refresh.access_token)
-
-            return Response(
-                {
-                    "access": access_token,
-                    "refresh": str(refresh)
-                },
-                status=status.HTTP_200_OK,
-            )
-
-        except TokenError as e:
-            return Response(
-                {"message": "Invalid or expired refresh token."},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
-
+            return Response({
+                "access": access_token,
+                "refresh": str(refresh)
+            }, status=200)
+        except TokenError:
+            return Response({"message": "Invalid or expired refresh token."}, status=401)
         except Exception as e:
             log_exception(e)
-            return Response(
-                {"error": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+            return Response({"error": str(e)}, status=500)
 
+@method_decorator(csrf_exempt, name='dispatch')
 class StudentView(APIView):
-    permission_classes = [IsAuthenticated]  # Use JWT globally via settings.py
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         reg_no = request.GET.get('register_number', '').upper()
-
+        if not reg_no:
+            return JsonResponse({"error": "Register number is required"}, status=400)
         try:
             student = Student.objects.get(register_number=reg_no)
             data = {
@@ -233,73 +200,89 @@ class StudentView(APIView):
                 "aadhar_number": student.aadhar_number or "",
                 "updated_at": student.updated_at.isoformat() if student.updated_at else None
             }
-            return Response(data, status=200)
+            return JsonResponse(data, status=200)
         except Student.DoesNotExist:
-            return Response({"error": "Student not found"}, status=404)
+            return JsonResponse({"error": "Student not found"}, status=404)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class SendStudentOTPView(APIView):
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        serializer = RegisterNumberSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reg_no = serializer.validated_data['register_number'].upper()
         try:
-            data = request.data
-            reg_no = data.get("register_number", "").upper()
-            otp = data.get("otp", "").strip()
-
             student = Student.objects.get(register_number=reg_no)
-
-            # Format phone number
             phone_number = student.phone_number.strip().replace(' ', '')
             if not phone_number.startswith('+91'):
                 phone_number = '+91' + phone_number.lstrip('0')
+            recent_otp = OTP.objects.filter(
+                student=student, created_at__gte=timezone.now() - timedelta(minutes=1)
+            ).exists()
+            if recent_otp:
+                return JsonResponse({"error": "Please wait before requesting a new OTP."}, status=429)
+            generated_otp = str(random.randint(100000, 999999))
+            OTP.objects.create(student=student, otp=generated_otp)
+            try:
+                twilio_client.messages.create(
+                    body=f"Your OTP is {generated_otp}",
+                    from_=twilio_phone,
+                    to=phone_number
+                )
+            except TwilioRestException as e:
+                log_exception(e)
+                return JsonResponse({"error": f"Twilio error: {str(e)}. Verify phone number in Twilio Console."}, status=400)
+            return JsonResponse({
+                "message": "OTP sent to registered mobile number",
+                "phone_number": phone_number
+            }, status=200)
+        except Student.DoesNotExist:
+            return JsonResponse({"error": "Student not found"}, status=404)
+        except Exception as e:
+            log_exception(e)
+            return JsonResponse({"error": str(e)}, status=500)
 
-            # If OTP is not provided, generate and send one
-            if not otp:
-                generated_otp = str(random.randint(100000, 999999))
-                OTP.objects.create(student=student, otp=generated_otp)
+@method_decorator(csrf_exempt, name='dispatch')
+class UpdateStudentView(APIView):
+    permission_classes = [IsAuthenticated]
 
-                try:
-                    twilio_client.messages.create(
-                        body=f"Your OTP is {generated_otp}",
-                        from_=twilio_phone,
-                        to=phone_number
-                    )
-                except Exception as e:
-                    log_exception(e)
-                    return Response({"error": f"Twilio error: {str(e)}"}, status=400)
-
-                return Response({"message": "OTP sent to registered mobile number"}, status=200)
-
-            # Validate OTP
+    def post(self, request):
+        serializer = UpdateStudentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reg_no = serializer.validated_data['register_number'].upper()
+        otp = serializer.validated_data['otp'].strip()
+        try:
+            student = Student.objects.get(register_number=reg_no)
             valid_otp = OTP.objects.filter(
                 student=student,
                 otp=otp,
                 created_at__gte=timezone.now() - timedelta(minutes=5)
             ).order_by("-created_at").first()
-
             if not valid_otp:
                 try:
                     latest_otp = OTP.objects.filter(student=student).latest('created_at')
                     if latest_otp.otp != otp:
-                        return Response({"error": "Invalid OTP"}, status=400)
+                        log_exception(Exception(f"Invalid OTP provided: {otp}, expected: {latest_otp.otp}"))
+                        return JsonResponse({"error": "Invalid OTP"}, status=400)
                     if timezone.now() - latest_otp.created_at > timedelta(minutes=5):
-                        return Response({"error": "OTP expired"}, status=400)
+                        log_exception(Exception(f"OTP expired: {otp}, created at: {latest_otp.created_at}"))
+                        return JsonResponse({"error": "OTP expired"}, status=400)
                 except OTP.DoesNotExist:
-                    return Response({"error": "No OTP found for this student"}, status=400)
-
-            # Update student details
+                    log_exception(Exception(f"No OTP found for student: {reg_no}"))
+                    return JsonResponse({"error": "No OTP found for this student"}, status=400)
             update_fields = ['dob', 'gender', 'father_name', 'mother_name', 'email', 'aadhar_number']
             for field in update_fields:
-                value = data.get(field)
-                if value:
+                value = serializer.validated_data.get(field)
+                if value is not None:
                     setattr(student, field, parse_date(value) if field == 'dob' else value)
-
             student.save()
-            return Response({"message": "Student data updated successfully"}, status=200)
-
+            return JsonResponse({"message": "Student data updated successfully"}, status=200)
         except Student.DoesNotExist:
-            return Response({"error": "Student not found"}, status=404)
+            return JsonResponse({"error": "Student not found"}, status=404)
         except Exception as e:
             log_exception(e)
-            return Response({"error": str(e)}, status=500)
-
+            return JsonResponse({"error": str(e)}, status=500)
 
 class ForgotPasswordView(APIView):
     def post(self, request):
@@ -308,35 +291,21 @@ class ForgotPasswordView(APIView):
         reg_no = serializer.validated_data['register_number'].upper()
         otp = serializer.validated_data.get('otp', '').strip()
         new_password = serializer.validated_data.get('new_password', '')
-
         try:
             student = Student.objects.get(register_number=reg_no)
-
             if not student.password:
-                return Response(
-                    {"error": "No password set for this account. Use registration process."},
-                    status=400
-                )
-
+                return Response({"error": "No password set for this account. Use registration process."}, status=400)
             phone_number = student.phone_number.strip().replace(' ', '')
             if not phone_number.startswith('+91'):
                 phone_number = '+91' + phone_number.lstrip('0')
-
-            # Step 1: Requesting OTP
             if not otp and not new_password:
                 recent_otp = OTP.objects.filter(
                     student=student, created_at__gte=timezone.now() - timedelta(minutes=1)
                 ).exists()
-
                 if recent_otp:
-                    return Response(
-                        {"error": "Please wait before requesting a new OTP."},
-                        status=429
-                    )
-
+                    return Response({"error": "Please wait before requesting a new OTP."}, status=429)
                 generated_otp = str(random.randint(100000, 999999))
                 OTP.objects.create(student=student, otp=generated_otp)
-
                 try:
                     twilio_client.messages.create(
                         body=f"Your password reset OTP is {generated_otp}",
@@ -345,48 +314,36 @@ class ForgotPasswordView(APIView):
                     )
                 except TwilioRestException as e:
                     log_exception(e)
-                    return Response(
-                        {"error": f"Twilio error: {str(e)}. Verify phone number in Twilio Console."},
-                        status=400
-                    )
-
+                    return Response({"error": f"Twilio error: {str(e)}. Verify phone number in Twilio Console."}, status=400)
                 return Response({
                     "message": "Password reset OTP sent successfully",
                     "phone_number": phone_number
                 }, status=200)
-
-            # Step 2: Resetting password
             if otp and new_password:
                 valid_otp = OTP.objects.filter(
                     student=student,
                     otp=otp,
                     created_at__gte=timezone.now() - timedelta(minutes=5)
                 ).order_by("-created_at").first()
-
                 if not valid_otp:
                     try:
                         latest_otp = OTP.objects.filter(student=student).latest('created_at')
                         if latest_otp.otp != otp:
                             log_exception(Exception(f"Invalid OTP provided: {otp}, expected: {latest_otp.otp}"))
                             return Response({"error": "Invalid OTP"}, status=400)
-
                         if timezone.now() - latest_otp.created_at > timedelta(minutes=5):
                             log_exception(Exception(f"OTP expired: {otp}, created at: {latest_otp.created_at}"))
                             return Response({"error": "OTP expired"}, status=400)
                     except OTP.DoesNotExist:
                         log_exception(Exception(f"No OTP found for student: {reg_no}"))
                         return Response({"error": "No OTP found for this student"}, status=400)
-
                 student.password = make_password(new_password)
                 student.save()
                 OTP.objects.filter(student=student).delete()
-
-                # 🔐 Generate JWT tokens
                 refresh = RefreshToken.for_user(student)
                 refresh['register_number'] = student.register_number
                 refresh['name'] = student.name
                 access = refresh.access_token
-
                 return Response({
                     "message": "Password reset successfully",
                     "access": str(access),
@@ -394,14 +351,9 @@ class ForgotPasswordView(APIView):
                     "name": student.name,
                     "register_number": student.register_number,
                     "phone_number": student.phone_number,
-                    "email": student.email if student.email else ""
+                    "email": student.email or ""
                 }, status=200)
-
-            return Response(
-                {"error": "Both OTP and new password are required to reset password"},
-                status=400
-            )
-
+            return Response({"error": "Both OTP and new password are required to reset password"}, status=400)
         except Student.DoesNotExist:
             return Response({"error": "Register number not found"}, status=404)
         except Exception as e:

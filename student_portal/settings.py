@@ -6,14 +6,12 @@ from django.conf import settings
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-
 SECRET_KEY = myenv.SECRET_KEY
 
 DEBUG = True
 
 ALLOWED_HOSTS = ["*"]
 APPEND_SLASH = True
-
 
 # Application definition
 
@@ -33,7 +31,6 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
-
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -48,15 +45,13 @@ ROOT_URLCONF = 'student_portal.urls'
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
-
 ]
-
 
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https?://.*$",
 ]
 CORS_ALLOW_CREDENTIALS = True
- 
+
 CORS_ALLOW_METHODS = [
     'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'
 ]
@@ -68,7 +63,6 @@ CORS_ALLOW_HEADERS = [
     'Origin',
     'Accept'
 ]
-
 
 TEMPLATES = [
     {
@@ -88,22 +82,16 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'student_portal.wsgi.application'
 
-
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'Student_Portal',
-        'USER': 'startup_user',          # 🔁 Replace with the username you used
-        'PASSWORD':myenv.POSTGRESQL_PASSWORD,      # 🔁 Replace with the password you set
+        'USER': 'startup_user',
+        'PASSWORD': myenv.POSTGRESQL_PASSWORD,
         'HOST': 'localhost',
         'PORT': myenv.DB_PORT,
     }
 }
-
-
-
-# Password validation
-# https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -120,7 +108,6 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
 SIMPLE_JWT = {
     'USER_ID_FIELD': 'register_number',
     'USER_ID_CLAIM': 'register_number',
@@ -130,11 +117,8 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 }
 
-
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        # 'rest_framework.authentication.SessionAuthentication',
-        # 'rest_framework.authentication.TokenAuthentication',
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
 }
@@ -146,9 +130,6 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 
 USE_TZ = True
-
-
-
 
 STATIC_URL = 'static/'
 
