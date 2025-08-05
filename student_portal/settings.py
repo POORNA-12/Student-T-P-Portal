@@ -123,7 +123,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 SIMPLE_JWT = {
     'USER_ID_FIELD': 'register_number',
-    'USER_ID_CLAIM': 'user_id',
+    'USER_ID_CLAIM': 'register_number',
     'BLACKLIST_AFTER_ROTATION': True,
     'ROTATE_REFRESH_TOKENS': True,
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=10),
@@ -152,6 +152,6 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
-
+AUTH_USER_MODEL = 'session_management.Student'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
