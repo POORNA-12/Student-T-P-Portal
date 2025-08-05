@@ -17,3 +17,11 @@ openpyxl
 
 
 # python manage.py import_students "Data.xlsx"
+
+
+# from session_management.models import Student
+
+# student = Student.objects.get(register_number='Y22CSE279030')
+# student.is_staff = True
+# student.is_superuser = True
+# student.save()
