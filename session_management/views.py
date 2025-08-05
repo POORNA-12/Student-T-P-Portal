@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 from .models import Student, OTP
-from .serializers import RegisterNumberSerializer, OTPVerifySerializer, SetPasswordSerializer, LoginSerializer, ForgotPasswordSerializer
+from .serializers import RegisterNumberSerializer, OTPVerifySerializer, SetPasswordSerializer, LoginSerializer, ForgotPasswordSerializer, UpdateStudentSerializer
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
 from django.contrib.auth.hashers import make_password, check_password
@@ -202,6 +202,9 @@ class StudentView(APIView):
     def get(self, request):
         reg_no = request.GET.get('register_number', '').upper()
 
+        if not reg_no:
+            return JsonResponse({"error": "Register number is required"}, status=400)
+
         try:
             student = Student.objects.get(register_number=reg_no)
             data = {
@@ -220,34 +223,59 @@ class StudentView(APIView):
         except Student.DoesNotExist:
             return JsonResponse({"error": "Student not found"}, status=404)
 
+@method_decorator(csrf_exempt, name='dispatch')
+class SendStudentOTPView(APIView):
     def post(self, request):
+        serializer = RegisterNumberSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reg_no = serializer.validated_data['register_number'].upper()
+
         try:
-            data = json.loads(request.body)
-            reg_no = data.get("register_number", "").upper()
-            otp = data.get("otp", "").strip()
-
             student = Student.objects.get(register_number=reg_no)
-
             phone_number = student.phone_number.strip().replace(' ', '')
             if not phone_number.startswith('+91'):
                 phone_number = '+91' + phone_number.lstrip('0')
 
-            if not otp:
-                generated_otp = str(random.randint(100000, 999999))
-                OTP.objects.create(student=student, otp=generated_otp)
+            recent_otp = OTP.objects.filter(
+                student=student, created_at__gte=timezone.now() - timedelta(minutes=1)
+            ).exists()
+            if recent_otp:
+                return JsonResponse({"error": "Please wait before requesting a new OTP."}, status=429)
 
-                try:
-                    twilio_client.messages.create(
-                        body=f"Your OTP is {generated_otp}",
-                        from_=twilio_phone,
-                        to=phone_number
-                    )
-                except TwilioRestException as e:
-                    log_exception(e)
-                    return JsonResponse({"error": f"Twilio error: {str(e)}. Verify phone number in Twilio Console."}, status=400)
+            generated_otp = str(random.randint(100000, 999999))
+            OTP.objects.create(student=student, otp=generated_otp)
 
-                return JsonResponse({"message": "OTP sent to registered mobile number"}, status=200)
+            try:
+                twilio_client.messages.create(
+                    body=f"Your OTP is {generated_otp}",
+                    from_=twilio_phone,
+                    to=phone_number
+                )
+            except TwilioRestException as e:
+                log_exception(e)
+                return JsonResponse({"error": f"Twilio error: {str(e)}. Verify phone number in Twilio Console."}, status=400)
 
+            return JsonResponse({
+                "message": "OTP sent to registered mobile number",
+                "phone_number": phone_number
+            }, status=200)
+
+        except Student.DoesNotExist:
+            return JsonResponse({"error": "Student not found"}, status=404)
+        except Exception as e:
+            log_exception(e)
+            return JsonResponse({"error": str(e)}, status=500)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class UpdateStudentView(APIView):
+    def post(self, request):
+        serializer = UpdateStudentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reg_no = serializer.validated_data['register_number'].upper()
+        otp = serializer.validated_data['otp'].strip()
+
+        try:
+            student = Student.objects.get(register_number=reg_no)
             valid_otp = OTP.objects.filter(
                 student=student,
                 otp=otp,
@@ -269,17 +297,15 @@ class StudentView(APIView):
 
             update_fields = ['dob', 'gender', 'father_name', 'mother_name', 'email', 'aadhar_number']
             for field in update_fields:
-                value = data.get(field)
-                if value:
-                    setattr(student, field, parse_date(value) if field == 'dob' else value)
+                value = serializer.validated_data.get(field)
+                if value is not None:
+                    setattr(student, field, value)
 
             student.save()
             return JsonResponse({"message": "Student data updated successfully"}, status=200)
 
         except Student.DoesNotExist:
             return JsonResponse({"error": "Student not found"}, status=404)
-        except json.JSONDecodeError:
-            return JsonResponse({"error": "Invalid JSON"}, status=400)
         except Exception as e:
             log_exception(e)
             return JsonResponse({"error": str(e)}, status=500)
