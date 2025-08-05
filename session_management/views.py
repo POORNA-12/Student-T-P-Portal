@@ -213,12 +213,14 @@ class RefreshTokenView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
+@method_decorator(csrf_exempt, name='dispatch')
 class StudentView(APIView):
-    permission_classes = [IsAuthenticated]  # Use JWT globally via settings.py
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         reg_no = request.GET.get('register_number', '').upper()
-
+        if not reg_no:
+            return JsonResponse({"error": "Register number is required"}, status=400)
         try:
             student = Student.objects.get(register_number=reg_no)
             data = {
@@ -233,72 +235,89 @@ class StudentView(APIView):
                 "aadhar_number": student.aadhar_number or "",
                 "updated_at": student.updated_at.isoformat() if student.updated_at else None
             }
-            return Response(data, status=200)
+            return JsonResponse(data, status=200)
         except Student.DoesNotExist:
-            return Response({"error": "Student not found"}, status=404)
+            return JsonResponse({"error": "Student not found"}, status=404)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class SendStudentOTPView(APIView):
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        serializer = RegisterNumberSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reg_no = serializer.validated_data['register_number'].upper()
         try:
-            data = request.data
-            reg_no = data.get("register_number", "").upper()
-            otp = data.get("otp", "").strip()
-
             student = Student.objects.get(register_number=reg_no)
-
-            # Format phone number
             phone_number = student.phone_number.strip().replace(' ', '')
             if not phone_number.startswith('+91'):
                 phone_number = '+91' + phone_number.lstrip('0')
+            recent_otp = OTP.objects.filter(
+                student=student, created_at__gte=timezone.now() - timedelta(minutes=1)
+            ).exists()
+            if recent_otp:
+                return JsonResponse({"error": "Please wait before requesting a new OTP."}, status=429)
+            generated_otp = str(random.randint(100000, 999999))
+            OTP.objects.create(student=student, otp=generated_otp)
+            try:
+                twilio_client.messages.create(
+                    body=f"Your OTP is {generated_otp}",
+                    from_=twilio_phone,
+                    to=phone_number
+                )
+            except TwilioRestException as e:
+                log_exception(e)
+                return JsonResponse({"error": f"Twilio error: {str(e)}. Verify phone number in Twilio Console."}, status=400)
+            return JsonResponse({
+                "message": "OTP sent to registered mobile number",
+                "phone_number": phone_number
+            }, status=200)
+        except Student.DoesNotExist:
+            return JsonResponse({"error": "Student not found"}, status=404)
+        except Exception as e:
+            log_exception(e)
+            return JsonResponse({"error": str(e)}, status=500)
 
-            # If OTP is not provided, generate and send one
-            if not otp:
-                generated_otp = str(random.randint(100000, 999999))
-                OTP.objects.create(student=student, otp=generated_otp)
+@method_decorator(csrf_exempt, name='dispatch')
+class UpdateStudentView(APIView):
+    permission_classes = [IsAuthenticated]
 
-                try:
-                    twilio_client.messages.create(
-                        body=f"Your OTP is {generated_otp}",
-                        from_=twilio_phone,
-                        to=phone_number
-                    )
-                except Exception as e:
-                    log_exception(e)
-                    return Response({"error": f"Twilio error: {str(e)}"}, status=400)
-
-                return Response({"message": "OTP sent to registered mobile number"}, status=200)
-
-            # Validate OTP
+    def post(self, request):
+        serializer = UpdateStudentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reg_no = serializer.validated_data['register_number'].upper()
+        otp = serializer.validated_data['otp'].strip()
+        try:
+            student = Student.objects.get(register_number=reg_no)
             valid_otp = OTP.objects.filter(
                 student=student,
                 otp=otp,
                 created_at__gte=timezone.now() - timedelta(minutes=5)
             ).order_by("-created_at").first()
-
             if not valid_otp:
                 try:
                     latest_otp = OTP.objects.filter(student=student).latest('created_at')
                     if latest_otp.otp != otp:
-                        return Response({"error": "Invalid OTP"}, status=400)
+                        log_exception(Exception(f"Invalid OTP provided: {otp}, expected: {latest_otp.otp}"))
+                        return JsonResponse({"error": "Invalid OTP"}, status=400)
                     if timezone.now() - latest_otp.created_at > timedelta(minutes=5):
-                        return Response({"error": "OTP expired"}, status=400)
+                        log_exception(Exception(f"OTP expired: {otp}, created at: {latest_otp.created_at}"))
+                        return JsonResponse({"error": "OTP expired"}, status=400)
                 except OTP.DoesNotExist:
-                    return Response({"error": "No OTP found for this student"}, status=400)
-
-            # Update student details
+                    log_exception(Exception(f"No OTP found for student: {reg_no}"))
+                    return JsonResponse({"error": "No OTP found for this student"}, status=400)
             update_fields = ['dob', 'gender', 'father_name', 'mother_name', 'email', 'aadhar_number']
             for field in update_fields:
-                value = data.get(field)
-                if value:
+                value = serializer.validated_data.get(field)
+                if value is not None:
                     setattr(student, field, parse_date(value) if field == 'dob' else value)
-
             student.save()
-            return Response({"message": "Student data updated successfully"}, status=200)
-
+            return JsonResponse({"message": "Student data updated successfully"}, status=200)
         except Student.DoesNotExist:
-            return Response({"error": "Student not found"}, status=404)
+            return JsonResponse({"error": "Student not found"}, status=404)
         except Exception as e:
             log_exception(e)
-            return Response({"error": str(e)}, status=500)
+            return JsonResponse({"error": str(e)}, status=500)
 
 
 class ForgotPasswordView(APIView):
