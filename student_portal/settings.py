@@ -24,10 +24,16 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework',
+    'rest_framework_simplejwt.token_blacklist',
+    'rest_framework.authtoken',
+    'corsheaders',
     'session_management'
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
+
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -40,10 +46,10 @@ MIDDLEWARE = [
 ROOT_URLCONF = 'student_portal.urls'
 
 CORS_ALLOW_ALL_ORIGINS = False
-# CORS_ALLOWED_ORIGINS = [
-#     "https://bluhawk.twilightparadox.com",
-#     "http://bluhawk.twilightparadox.com",
-# ]
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+
+]
 
 
 CORS_ALLOWED_ORIGIN_REGEXES = [
@@ -116,7 +122,10 @@ AUTH_PASSWORD_VALIDATORS = [
 
 
 SIMPLE_JWT = {
+    'USER_ID_FIELD': 'register_number',
+    'USER_ID_CLAIM': 'user_id',
     'BLACKLIST_AFTER_ROTATION': True,
+    'ROTATE_REFRESH_TOKENS': True,
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=10),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 }
